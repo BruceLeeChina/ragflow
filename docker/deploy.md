@@ -16,6 +16,14 @@ test123
 普通用户：
 http://192.168.56.21
 
+处理问题：
+C:\Users\Administrator\.ollama\config
+config.json
+嵌入模型：
+ollama run deepseek-r1:32b
+http://192.168.56.3:11434
+
+ollama run mxbai-embed-large
 
 本地启动前后端：
 cd ragflow/
