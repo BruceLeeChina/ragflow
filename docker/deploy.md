@@ -1,3 +1,5 @@
+===================================================== Linux Docker部署的服务 ===============================================================
+
 git clone https://github.com/infiniflow/ragflow.git
 
 cd ragflow/docker
@@ -15,7 +17,6 @@ test@ragflow.io
 test123
 
 
-
 处理问题：
 C:\Users\Administrator\.ollama\config
 config.json
@@ -25,34 +26,13 @@ http://192.168.56.3:11434
 
 ollama run mxbai-embed-large
 
+===================================================== Windows 本机测试部署服务 ===============================================================
+
 本地启动前后端：
-# 确保在ragflow或rag环境中
+# 确保在ragflow或rag环境中 安装uv
 pip install uv pre-commit
-
-# 设置环境变量
-$env:PYTHONPATH = "$(Get-Location)"
-$env:HF_ENDPOINT = "https://hf-mirror.com"
-$env:UV_INDEX_URL = "https://mirrors.aliyun.com/pypi/simple/"
-
-# 安装依赖
-uv sync --python 3.10
-
-
-# 运行依赖下载
-uv run download_deps.py --china-mirrors
-
 # 安装pre-commit
 pre-commit install
-
-# 启动服务
-uv run python api/ragflow_server.py
-访问：http://0.0.0.0:9380
-
-#启动任务执行器
-$env:PYTHONPATH = "$(Get-Location)"
-$env:HF_ENDPOINT = "https://hf-mirror.com"
-$env:UV_INDEX_URL = "https://mirrors.aliyun.com/pypi/simple/"
-python rag/svr/task_executor.py
 
 
 # 前端
