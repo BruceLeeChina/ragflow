@@ -168,4 +168,3 @@ rerank:
 #  provider: "xinference"
 #  endpoint: "http://localhost:9997"
 #  model: "llava-v1.6-mistral-7b"
-
