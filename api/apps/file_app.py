@@ -171,6 +171,9 @@ async def create():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_files():
+    # 添加调试日志，确认是否进入该函数
+    import logging
+    logging.info(f"Accessing /v1/file/list endpoint for user: {getattr(current_user, 'id', 'Unknown')}")
     pf_id = request.args.get("parent_id")
 
     keywords = request.args.get("keywords", "")

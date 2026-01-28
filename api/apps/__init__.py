@@ -266,7 +266,11 @@ def register_page(page_path):
     url_prefix = (
         f"/api/{API_VERSION}" if sdk_path in path else f"/{API_VERSION}/{page_name}"
     )
-
+    
+    # 添加调试日志
+    import logging
+    logging.info(f"Registering blueprint {page_name} with url_prefix: {url_prefix}")
+    
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix
 
