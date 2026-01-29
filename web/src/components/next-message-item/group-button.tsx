@@ -67,6 +67,7 @@ export const AssistantGroupButton = ({
     content,
     audioBinary,
     ttsFileUrl,
+    conversationId,
   );
   const { generateTts, isGenerating } = useTts();
 
@@ -82,12 +83,16 @@ export const AssistantGroupButton = ({
 
   const handleDownloadTts = useCallback(() => {
     if (conversationId) {
-      const link = document.createElement('a');
-      link.href = `${api_host}/v1/conversation/tts/down?conversation_id=${conversationId}`;
-      link.download = `tts-${conversationId}.mp3`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        const link = document.createElement('a');
+        link.href = `${api_host}/conversation/tts/down?conversation_id=${conversationId}`;
+        link.download = `tts-${conversationId}.mp3`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        console.error('Download TTS failed:', error);
+      }
     }
   }, [conversationId]);
 
@@ -120,11 +125,7 @@ export const AssistantGroupButton = ({
           </ToggleGroupItem>
         )}
         {showLoudspeaker && (
-          <ToggleGroupItem
-            value="b"
-            onClick={handleRead}
-            disabled={ttsStatus !== 'completed'}
-          >
+          <ToggleGroupItem value="b" onClick={handleRead} disabled={false}>
             <Tooltip title={t('chat.read')}>
               {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
             </Tooltip>
@@ -137,7 +138,7 @@ export const AssistantGroupButton = ({
           <ToggleGroupItem
             value="g"
             onClick={handleDownloadTts}
-            disabled={!ttsFileUrl || ttsStatus !== 'completed'}
+            disabled={false}
           >
             <Tooltip title="下载语音">
               <Download size={16} />

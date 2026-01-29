@@ -323,13 +323,100 @@ async def sequence2txt():
 async def tts():
     req = await get_request_json()
     text = req["text"]
+    
+    # 检查是否提供了conversation_id，如果是，则尝试获取已存在的TTS文件
+    conversation_id = req.get("conversation_id")
+    if conversation_id:
+        try:
+            # 验证对话是否存在
+            e, conv = ConversationService.get_by_id(conversation_id)
+            if e:
+                conv_data = conv.to_dict()
+                tts_file_url = conv_data.get("tts_file_url")
+                tts_status = conv_data.get("tts_status")
+                
+                # 如果TTS已生成且状态为completed，则直接返回已存储的音频文件
+                if tts_file_url and tts_status == "completed":
+                    # 解析URL获取文件路径
+                    import urllib.parse
+                    import re
+                    parsed_url = urllib.parse.urlparse(tts_file_url)
+                    path = parsed_url.path
+                    # 提取文件名（假设路径格式为/bucket/tts/filename.mp3）
+                    filename = path.split("/")[-1]
+                    location = f"tts/{filename}"
+                    
+                    # 从MinIO获取文件，使用 conversation_id 作为 bucket
+                    bucket = conversation_id
+                    try:
+                        blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, location)
+                        if blob:
+                            # 返回音频文件
+                            response = await make_response(blob)
+                            ext = re.search(r"\.([^.]+)$", filename)
+                            if ext:
+                                response.headers.set('Content-Type', 'audio/%s' % ext.group(1))
+                            response.headers.add_header("Cache-Control", "no-cache")
+                            response.headers.add_header("Connection", "keep-alive")
+                            response.headers.add_header("X-Accel-Buffering", "no")
+                            return response
+                    except Exception as e:
+                        # 如果获取已存储文件失败，记录错误并回退到原始逻辑
+                        logging.warning(f"Failed to get stored TTS file: {str(e)}")
+                        pass
 
+        except Exception as e:
+            # 如果有任何错误，记录错误并回退到原始逻辑
+            logging.warning(f"Error checking stored TTS file: {str(e)}")
+            pass
+
+    # 检查租户是否设置了TTS模型
     tenants = TenantService.get_info_by(current_user.id)
     if not tenants:
         return get_data_error_result(message="Tenant not found!")
 
     tts_id = tenants[0]["tts_id"]
     if not tts_id:
+        # 如果没有设置TTS模型，但提供了conversation_id且有已存储的文件，可以尝试从消息中查找
+        if conversation_id:
+            try:
+                e, conv = ConversationService.get_by_id(conversation_id)
+                if e:
+                    conv_data = conv.to_dict()
+                    # 检查消息中是否有单独的tts_file_url
+                    for msg in conv_data.get("message", []):
+                        msg_tts_file_url = msg.get("tts_file_url")
+                        msg_tts_status = msg.get("tts_status")
+                        if msg_tts_file_url and msg_tts_status == "completed":
+                            # 解析URL获取文件路径
+                            import urllib.parse
+                            import re
+                            parsed_url = urllib.parse.urlparse(msg_tts_file_url)
+                            path = parsed_url.path
+                            # 提取文件名
+                            filename = path.split("/")[-1]
+                            location = f"tts/{filename}"
+                            
+                            # 从MinIO获取文件
+                            bucket = conversation_id
+                            try:
+                                blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, location)
+                                if blob:
+                                    # 返回音频文件
+                                    response = await make_response(blob)
+                                    ext = re.search(r"\.([^.]+)$", filename)
+                                    if ext:
+                                        response.headers.set('Content-Type', 'audio/%s' % ext.group(1))
+                                    response.headers.add_header("Cache-Control", "no-cache")
+                                    response.headers.add_header("Connection", "keep-alive")
+                                    response.headers.add_header("X-Accel-Buffering", "no")
+                                    return response
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+        
+        # 如果没有找到已存储的文件，则返回错误
         return get_data_error_result(message="No default TTS model is set")
 
     tts_mdl = LLMBundle(tenants[0]["tenant_id"], LLMType.TTS, tts_id)
@@ -572,16 +659,67 @@ async def tts_callback():
         if not task_id:
             return get_data_error_result(message="Missing task_id")
 
-        # 根据task_id查找对话
+        logging.info(f"Received TTS callback: task_id={task_id}, status={status}")
+
+        # 首先根据task_id查找对话（对话级别的tts_task_id）
         convs = ConversationService.query(tts_task_id=task_id)
+        if not convs:
+            # 如果在对话级别没找到，则遍历所有对话查找消息级别的tts_task_id
+            logging.info(f"No conversation found with conversation-level tts_task_id={task_id}, searching in messages...")
+            
+            # 获取所有属于当前租户的对话（这里需要更精确的查询）
+            # 由于我们不知道具体是哪个对话，需要更通用的方法
+            # 我们先尝试通过数据库直接查询
+            from api.db.db_models import Conversation as ConversationModel
+            # 查找消息中包含该tts_task_id的对话
+            matched_conv = None
+            # 这里我们需要遍历所有对话，查找包含指定tts_task_id的消息
+            # 为了效率，我们直接查询数据库
+            for conv_record in ConversationModel.select():
+                try:
+                    conv_dict = conv_record.to_dict()
+                    messages = conv_dict.get("message", [])
+                    for msg in messages:
+                        if msg.get("tts_task_id") == task_id or msg.get("ttsTaskId") == task_id:
+                            matched_conv = conv_record
+                            logging.info(f"Found conversation {conv_record.id} with message containing tts_task_id={task_id}")
+                            break
+                    if matched_conv:
+                        break
+                except Exception as e:
+                    logging.warning(f"Error processing conversation {conv_record.id}: {str(e)}")
+                    continue
+            
+            if matched_conv:
+                convs = [matched_conv]
+            else:
+                logging.warning(f"No conversation found for task_id: {task_id}")
+                return get_data_error_result(message="Conversation not found for task_id")
+
         if not convs:
             return get_data_error_result(message="Conversation not found for task_id")
 
         conv = convs[0]
         conv_data = conv.to_dict()
+        old_status = conv_data.get("tts_status", "unknown")
         conv_data["tts_status"] = status
 
+        # 查找并更新消息级别的TTS状态
+        updated_messages = False
+        for msg in conv_data.get("message", []):
+            # 检查消息级别是否有tts_task_id匹配（兼容不同字段名）
+            if msg.get("tts_task_id") == task_id or msg.get("ttsTaskId") == task_id:
+                old_msg_status = msg.get("tts_status", "unknown")
+                msg["tts_status"] = status
+                if status == "completed":
+                    # 如果有可用的音频URL，也更新到消息级别
+                    if audio_url:
+                        msg["tts_file_url"] = audio_url
+                updated_messages = True
+                logging.info(f"Updated message-level TTS status for message {msg.get('id', 'unknown')}: from {old_msg_status} to {status}")
+
         if status == "completed":
+            logging.info(f"TTS task completed for task_id: {task_id}, processing audio download...")
             # 使用task_id下载TTS文件
             try:
                 # 使用task_id从TTS服务下载文件
@@ -589,9 +727,18 @@ async def tts_callback():
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     audio_response = await client.get(tts_download_url)
                     if audio_response.status_code != 200:
-                        logging.error(f"Failed to download audio file: {audio_response.status_code}")
-                        return get_data_error_result(message="Failed to download audio file")
+                        logging.error(f"Failed to download audio file: {audio_response.status_code}, response: {audio_response.text}")
+                        # 即使下载失败也更新状态，但记录错误
+                        success = ConversationService.update_by_id(conv.id, conv_data)
+                        if success:
+                            logging.info(f"TTS status updated to completed (without file) for conversation {conv.id}, task_id {task_id}")
+                            return get_json_result(data={"success": True, "message": "Status updated but audio download failed"})
+                        else:
+                            logging.error(f"Failed to update conversation {conv.id} with TTS status")
+                            return get_data_error_result(message="Failed to update conversation")
+                    
                     audio_data = audio_response.content
+                    logging.info(f"Successfully downloaded audio data ({len(audio_data)} bytes) for task_id: {task_id}")
 
                 # 生成唯一的文件名和位置
                 import uuid
@@ -602,24 +749,41 @@ async def tts_callback():
                 # 使用 conversation_id 作为 bucket
                 bucket = conv.id
                 await asyncio.to_thread(settings.STORAGE_IMPL.put, bucket, location, audio_data)
+                logging.info(f"Audio file uploaded to MinIO: {bucket}/{location}")
 
                 # 获取预签名URL
                 presigned_url = await asyncio.to_thread(
                     minio_client.get_presigned_url, bucket, location, expires=timedelta(days=7)
                 )
+                
+                # 更新对话级别的URL
                 conv_data["tts_file_url"] = presigned_url
                 logging.info(f"TTS file uploaded to MinIO: {bucket}/{location}, URL: {presigned_url}")
+                
+                # 同时更新对应消息的URL（如果之前没更新的话）
+                if not updated_messages:  # 如果还没有更新消息级别，尝试根据task_id查找
+                    for msg in conv_data.get("message", []):
+                        if msg.get("tts_task_id") == task_id or msg.get("ttsTaskId") == task_id:
+                            msg["tts_file_url"] = presigned_url
+                            updated_messages = True
+                            logging.info(f"Updated message-level TTS file URL for message {msg.get('id', 'unknown')}")
             except Exception as e:
-                logging.exception(e)
+                logging.exception(f"Error in TTS audio processing for task_id {task_id}: {str(e)}")
                 # 出错时仍更新状态，但不设置文件URL
                 pass
 
-        ConversationService.update_by_id(conv.id, conv_data)
+        # 更新对话记录
+        success = ConversationService.update_by_id(conv.id, conv_data)
+        if not success:
+            logging.error(f"Failed to update conversation {conv.id} with TTS status")
+            return get_data_error_result(message="Failed to update conversation")
 
+        # 记录成功日志
+        logging.info(f"TTS callback processed successfully: task_id={task_id}, old_status={old_status}, new_status={status}, conv_id={conv.id}, has_file_url={bool(conv_data.get('tts_file_url'))}, messages_updated={updated_messages}")
         return get_json_result(data={"success": True})
 
     except Exception as e:
-        logging.exception(e)
+        logging.exception(f"Error in TTS callback handler: {str(e)}")
         return server_error_response(e)
 
 

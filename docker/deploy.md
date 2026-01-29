@@ -245,7 +245,7 @@ conda activate chatterbox
 python server.py --host 0.0.0.0 --port 8001 --device cuda
 
 7. ASR fuasr
-conda activate FunAS
+conda activate FunASR
 python server.py --host 0.0.0.0 --port 8002 --device cpu --ngpu 0
 
 

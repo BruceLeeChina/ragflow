@@ -2,6 +2,8 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { useDeleteMessage, useFeedback } from '@/hooks/use-chat-request';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
+import { api_host } from '@/utils/api';
+import { getAuthorization } from '@/utils/authorization-util';
 import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -55,6 +57,7 @@ export const useSpeech = (
   content: string,
   audioBinary?: string,
   ttsFileUrl?: string,
+  conversationId?: string,
 ) => {
   const ref = useRef<HTMLAudioElement>(null);
   const { read } = useSpeechWithSse();
@@ -92,6 +95,49 @@ export const useSpeech = (
           setIsPlaying(false);
         });
       }
+    } else if (conversationId) {
+      // 如果有conversationId，尝试通过TTS接口获取音频
+      try {
+        // 调用TTS接口，传入conversationId和content
+        const response = await fetch(`${api_host}/conversation/tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
+          },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            text: content,
+          }),
+        });
+
+        if (response.ok) {
+          const audioBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          if (ref.current) {
+            ref.current.src = audioUrl;
+            ref.current.play().catch((error) => {
+              console.error('Error playing audio:', error);
+              setIsPlaying(false);
+            });
+          }
+        } else {
+          console.error('Failed to get TTS audio');
+          // 如果通过TTS接口获取失败，回退到原始方法
+          const response = await read({ text: content });
+          if (response) {
+            player?.current?.feedWithResponse(response);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching TTS audio:', error);
+        // 如果获取失败，回退到原始方法
+        const response = await read({ text: content });
+        if (response) {
+          player?.current?.feedWithResponse(response);
+        }
+      }
     } else {
       // 否则使用语音合成
       const response = await read({ text: content });
@@ -99,7 +145,7 @@ export const useSpeech = (
         player?.current?.feedWithResponse(response);
       }
     }
-  }, [read, content, ttsFileUrl]);
+  }, [read, content, ttsFileUrl, conversationId]);
 
   const handleRead = useCallback(async () => {
     if (isPlaying) {
