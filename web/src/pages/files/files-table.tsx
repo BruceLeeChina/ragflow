@@ -43,6 +43,7 @@ import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
+import { AsrStatusCell } from './asr-status-cell';
 import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
@@ -208,6 +209,14 @@ export function FilesTable({
       cell: ({ row }) => {
         const value: IFile['kbs_info'] = row.getValue('kbs_info');
         return <KnowledgeCell value={value}></KnowledgeCell>;
+      },
+    },
+    {
+      id: 'asrStatus',
+      header: '语音识别',
+      enableHiding: false,
+      cell: ({ row }) => {
+        return <AsrStatusCell row={row}></AsrStatusCell>;
       },
     },
     {

@@ -29,6 +29,11 @@ export interface IDocumentInfo {
   update_date: string;
   update_time: number;
   meta_fields?: Record<string, any>;
+  // ASR related fields
+  asr_status?: string; // pending, processing, completed, failed
+  asr_progress?: number; // 0-100
+  asr_result?: string;
+  asr_task_id?: string;
 }
 
 export interface IParserConfig {

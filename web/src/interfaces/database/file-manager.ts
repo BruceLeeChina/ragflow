@@ -14,6 +14,11 @@ export interface IFile {
   update_time: number;
   source_type: string;
   has_child_folder?: boolean;
+  // ASR related fields
+  asr_status?: string; // pending, processing, completed, failed
+  asr_progress?: number; // 0-100
+  asr_result?: string;
+  asr_task_id?: string;
 }
 
 export interface IFolder {

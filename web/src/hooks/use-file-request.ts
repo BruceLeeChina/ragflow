@@ -168,7 +168,11 @@ export const useFetchFileList = () => {
   const id = useGetFolderId();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
-  const { data, isFetching: loading } = useQuery<IFetchFileListResult>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IFetchFileListResult>({
     queryKey: [
       FileApiAction.FetchFileList,
       {
@@ -206,6 +210,7 @@ export const useFetchFileList = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
+    refetch,
   };
 };
 

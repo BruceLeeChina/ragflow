@@ -920,3 +920,196 @@ async def upload_info():
         return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
     except Exception as e:
         return  server_error_response(e)
+
+
+@manager.route('/asr/start', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("doc_id")
+async def start_asr():
+    req = await get_request_json()
+    doc_id = req.get("doc_id")
+    
+    if not DocumentService.accessible(doc_id, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    
+    e, doc = DocumentService.get_by_id(doc_id)
+    if not e:
+        return get_data_error_result(message="Document not found!")
+    
+    import re
+    if not re.match(r'\.(mp3|wav|ogg|aac|flac)$', doc.name, re.IGNORECASE):
+        return get_json_result(data=False, message="Only audio files are supported for ASR.", code=RetCode.ARGUMENT_ERROR)
+    
+    from api.services.speech_client import FunASRClient
+    asr_client = FunASRClient()
+    
+    b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+    file_path = f"{b}/{n}"
+    
+    callback_url = "http://127.0.0.1:9380/v1/document/asr/callback"
+    task_id = await asyncio.to_thread(asr_client.submit_asr_task, file_path, callback_url=callback_url)
+    if not task_id:
+        return get_json_result(data=False, message="Failed to submit ASR task.", code=RetCode.SERVER_ERROR)
+    
+    DocumentService.update_by_id(doc_id, {
+        "asr_status": "processing",
+        "asr_progress": 0,
+        "asr_task_id": task_id
+    })
+    # Also update linked file
+    file_links = File2DocumentService.get_by_document_id(doc_id)
+    for link in file_links:
+        FileService.update_by_id(link.file_id, {
+            "asr_status": "processing",
+            "asr_progress": 0,
+            "asr_task_id": task_id
+        })
+    
+    return get_json_result(data={"task_id": task_id})
+
+
+@manager.route('/asr/status', methods=['GET'])  # noqa: F821
+@login_required
+async def get_asr_status():
+    doc_id = request.args.get("doc_id")
+    
+    if not DocumentService.accessible(doc_id, current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    
+    e, doc = DocumentService.get_by_id(doc_id)
+    if not e:
+        return get_data_error_result(message="Document not found!")
+    
+    if not doc.asr_task_id:
+        return get_json_result(data={"status": "pending", "progress": 0})
+    
+    from api.services.speech_client import FunASRClient
+    asr_client = FunASRClient()
+    
+    status, progress, result = await asyncio.to_thread(asr_client.get_asr_result, doc.asr_task_id)
+    
+    if status == "completed":
+        update_data = {
+            "asr_status": "completed",
+            "asr_progress": 100,
+            "asr_result": result
+        }
+        DocumentService.update_by_id(doc_id, update_data)
+        # Also update linked file
+        file_links = File2DocumentService.get_by_document_id(doc_id)
+        for link in file_links:
+            FileService.update_by_id(link.file_id, update_data)
+    elif status == "processing":
+        update_data = {
+            "asr_status": "processing",
+            "asr_progress": progress
+        }
+        DocumentService.update_by_id(doc_id, update_data)
+        # Also update linked file
+        file_links = File2DocumentService.get_by_document_id(doc_id)
+        for link in file_links:
+            FileService.update_by_id(link.file_id, update_data)
+    elif status == "failed":
+        update_data = {
+            "asr_status": "failed",
+            "asr_progress": 0
+        }
+        DocumentService.update_by_id(doc_id, update_data)
+        # Also update linked file
+        file_links = File2DocumentService.get_by_document_id(doc_id)
+        for link in file_links:
+            FileService.update_by_id(link.file_id, update_data)
+    
+    return get_json_result(data={"status": status, "progress": progress, "result": result if status == "completed" else None})
+
+
+@manager.route('/asr/preview', methods=['GET'])  # noqa: F821
+@login_required
+async def get_asr_preview():
+    doc_id = request.args.get("doc_id")
+    if not doc_id:
+        return get_data_error_result(message="Missing doc_id parameter!")
+
+    try:
+        # Check document permission
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+        
+        # Get document
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        # Return ASR result if available
+        if doc.asr_status == "completed" and doc.asr_result:
+            return get_json_result(data=doc.asr_result)
+        else:
+            return get_json_result(data={})
+
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/asr/callback', methods=['POST'])  # noqa: F821
+async def asr_callback():
+    import logging
+    req = await get_request_json()
+    # print result
+    print(req)
+    task_id = req.get("task_id")
+    status = req.get("status")
+    progress = req.get("progress", 0)
+    result = req.get("result")
+    
+    logging.info(f"ASR callback received: task_id={task_id}, status={status}, progress={progress}")
+    
+    # First try to find document by task ID
+    doc = DocumentService.query(asr_task_id=task_id)
+    logging.info(f"Document query result for task_id={task_id}: {doc}")
+    if doc:
+        doc = doc[0]
+        update_data = {"asr_status": status, "asr_progress": progress}
+        if status == "completed":
+            # Store the entire result object
+            update_data["asr_result"] = result
+        
+        try:
+            updated = DocumentService.update_by_id(doc.id, update_data)
+            logging.info(f"Updated document {doc.id} with data: {update_data}, result: {updated}")
+            # Also update linked file
+            file_links = File2DocumentService.get_by_document_id(doc.id)
+            for link in file_links:
+                FileService.update_by_id(link.file_id, update_data)
+                logging.info(f"Updated linked file {link.file_id} with data: {update_data}")
+        except Exception as e:
+            logging.error(f"Failed to update document {doc.id}: {e}")
+            return get_json_result(data=False, message=f"Update failed: {str(e)}", code=RetCode.SERVER_ERROR)
+        
+        return get_json_result(data=True)
+    
+    # If not found, try to find file by task ID
+    file_obj = FileService.query(asr_task_id=task_id)
+    logging.info(f"File query result for task_id={task_id}: {file_obj}")
+    if file_obj:
+        file_obj = file_obj[0]
+        update_data = {"asr_status": status, "asr_progress": progress}
+        if status == "completed":
+            # Store the entire result object
+            update_data["asr_result"] = result
+        
+        try:
+            updated = FileService.update_by_id(file_obj.id, update_data)
+            logging.info(f"Updated file {file_obj.id} with data: {update_data}, result: {updated}")
+            # Also update linked document
+            file_links = File2DocumentService.get_by_file_id(file_obj.id)
+            for link in file_links:
+                DocumentService.update_by_id(link.document_id, update_data)
+                logging.info(f"Updated linked document {link.document_id} with data: {update_data}")
+        except Exception as e:
+            logging.error(f"Failed to update file {file_obj.id}: {e}")
+            return get_json_result(data=False, message=f"Update failed: {str(e)}", code=RetCode.SERVER_ERROR)
+        
+        return get_json_result(data=True)
+    
+    logging.warning(f"No document or file found for task_id={task_id}")
+    return get_json_result(data=False, message="Task not found.", code=RetCode.ARGUMENT_ERROR)

@@ -467,3 +467,228 @@ async def move():
 
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/asr/start', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("file_id")
+async def start_asr():
+    req = await get_request_json()
+    file_id = req["file_id"]
+
+    try:
+        # First try to get file from FileService
+        e, file = FileService.get_by_id(file_id)
+        is_document = False
+        
+        # If file not found, try to get document from DocumentService
+        if not e:
+            e_doc, doc = DocumentService.get_by_id(file_id)
+            if not e_doc:
+                return get_data_error_result(message="File not found!")
+            # Check document permission
+            if not DocumentService.accessible(file_id, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+            # Use document as file
+            file = doc
+            is_document = True
+        else:
+            # Check file permission
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+
+        # Check if file is an audio file
+        if not file.type == FileType.AURAL.value and not re.match(r'\.(mp3|wav|ogg|aac|flac)$', file.name, re.IGNORECASE):
+            return get_data_error_result(message="Only audio files are supported for ASR!")
+
+        # Get audio file from storage
+        blob = None
+        if not is_document:
+            # Get from file storage
+            blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, file.parent_id, file.location)
+        
+        # If not found or it's a document, get from document storage
+        if not blob:
+            if is_document:
+                # Use doc_id for document
+                b, n = File2DocumentService.get_storage_address(doc_id=file_id)
+            else:
+                # Use file_id for file
+                b, n = File2DocumentService.get_storage_address(file_id=file_id)
+            blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+
+        if not blob:
+            return get_data_error_result(message="Failed to get audio file from storage!")
+
+        # Save audio to temporary file
+        temp_file_path = f"/tmp/{get_uuid()}_{file.name}"
+        with open(temp_file_path, 'wb') as f:
+            f.write(blob)
+
+        # Submit ASR task
+        from api.services.speech_client import asr_client
+        callback_url = "http://127.0.0.1:9380/v1/document/asr/callback"
+        task_id = await asyncio.to_thread(asr_client.submit_asr_task, temp_file_path, callback_url=callback_url)
+
+        # Clean up temporary file
+        import os
+        os.unlink(temp_file_path)
+
+        if not task_id:
+            return get_data_error_result(message="Failed to submit ASR task!")
+
+        # Update file with ASR task info
+        if is_document:
+            # Update document
+            DocumentService.update_by_id(file_id, {
+                "asr_status": "processing",
+                "asr_progress": 0,
+                "asr_task_id": task_id
+            })
+            # Also update linked file
+            file_links = File2DocumentService.get_by_document_id(file_id)
+            for link in file_links:
+                FileService.update_by_id(link.file_id, {
+                    "asr_status": "processing",
+                    "asr_progress": 0,
+                    "asr_task_id": task_id
+                })
+        else:
+            # Update file
+            FileService.update_by_id(file_id, {
+                "asr_status": "processing",
+                "asr_progress": 0,
+                "asr_task_id": task_id
+            })
+            # Also update linked document
+            file_links = File2DocumentService.get_by_file_id(file_id)
+            for link in file_links:
+                DocumentService.update_by_id(link.document_id, {
+                    "asr_status": "processing",
+                    "asr_progress": 0,
+                    "asr_task_id": task_id
+                })
+
+        return get_json_result(data={"task_id": task_id})
+
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/asr/status', methods=['GET'])  # noqa: F821
+@login_required
+async def get_asr_status():
+    task_id = request.args.get("task_id")
+    if not task_id:
+        return get_data_error_result(message="Missing task_id parameter!")
+
+    try:
+        # Get file by ASR task ID
+        file = FileService.query(asr_task_id=task_id).first()
+        is_document = False
+        
+        # If file not found, try to get document by ASR task ID
+        if not file:
+            doc = DocumentService.query(asr_task_id=task_id).first()
+            if not doc:
+                return get_data_error_result(message="File not found for this task ID!")
+            # Check document permission
+            if not DocumentService.accessible(doc.id, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+            # Use document as file
+            file = doc
+            is_document = True
+        else:
+            # Check file permission
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+
+        # Get ASR result
+        from api.services.speech_client import asr_client
+        result = await asyncio.to_thread(asr_client.get_asr_result, task_id)
+
+        # Update file with ASR result if completed
+        if result:
+            if is_document:
+                # Update document
+                DocumentService.update_by_id(file.id, {
+                    "asr_status": "completed",
+                    "asr_progress": 100,
+                    "asr_result": result
+                })
+                # Also update linked file
+                file_links = File2DocumentService.get_by_document_id(file.id)
+                for link in file_links:
+                    FileService.update_by_id(link.file_id, {
+                        "asr_status": "completed",
+                        "asr_progress": 100,
+                        "asr_result": result
+                    })
+            else:
+                # Update file
+                FileService.update_by_id(file.id, {
+                    "asr_status": "completed",
+                    "asr_progress": 100,
+                    "asr_result": result
+                })
+                # Also update linked document
+                file_links = File2DocumentService.get_by_file_id(file.id)
+                for link in file_links:
+                    DocumentService.update_by_id(link.document_id, {
+                        "asr_status": "completed",
+                        "asr_progress": 100,
+                        "asr_result": result
+                    })
+        else:
+            # Check if task is still processing
+            # Note: In a real-world scenario, you would check the actual task status from the ASR service
+            # For this example, we'll assume it's still processing if no result
+            pass
+
+        # Return current status
+        return get_json_result(data={
+            "status": file.asr_status,
+            "progress": file.asr_progress,
+            "result": file.asr_result
+        })
+
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/asr/preview', methods=['GET'])  # noqa: F821
+@login_required
+async def get_asr_preview():
+    file_id = request.args.get("file_id")
+    if not file_id:
+        return get_data_error_result(message="Missing file_id parameter!")
+
+    try:
+        # First try to get file from FileService
+        e, file = FileService.get_by_id(file_id)
+        is_document = False
+        
+        # If file not found, try to get document from DocumentService
+        if not e:
+            e_doc, doc = DocumentService.get_by_id(file_id)
+            if not e_doc:
+                return get_data_error_result(message="File not found!")
+            # Check document permission
+            if not DocumentService.accessible(file_id, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+            # Use document as file
+            file = doc
+            is_document = True
+        else:
+            # Check file permission
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
+
+        # Return ASR result if available
+        if file.asr_status == "completed" and file.asr_result:
+            return get_json_result(data=file.asr_result)
+        else:
+            return get_json_result(data={})
+
+    except Exception as e:
+        return server_error_response(e)

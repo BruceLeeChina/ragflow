@@ -797,6 +797,11 @@ class Document(DataBaseModel):
     process_duration = FloatField(default=0)
     meta_fields = JSONField(null=True, default={})
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
+    # ASR related fields
+    asr_status = CharField(max_length=32, null=False, default="pending", help_text="ASR task status", index=True)
+    asr_progress = FloatField(default=0, help_text="ASR task progress (0-100)")
+    asr_result = TextField(null=True, help_text="ASR recognition result", default="")
+    asr_task_id = CharField(max_length=40, null=False, default="", help_text="ASR task ID", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -815,6 +820,11 @@ class File(DataBaseModel):
     size = IntegerField(default=0, index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     source_type = CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)
+    # ASR related fields
+    asr_status = CharField(max_length=32, null=False, default="pending", help_text="ASR task status", index=True)
+    asr_progress = FloatField(default=0, help_text="ASR task progress (0-100)")
+    asr_result = TextField(null=True, help_text="ASR recognition result", default="")
+    asr_task_id = CharField(max_length=40, null=False, default="", help_text="ASR task ID", index=True)
 
     class Meta:
         db_table = "file"
@@ -1294,4 +1304,16 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))
     alter_db_add_column(migrator, "llm_factories", "rank", IntegerField(default=0, index=False))
+    
+    # Add ASR related columns
+    alter_db_add_column(migrator, "file", "asr_status", CharField(max_length=32, null=False, default="", help_text="ASR task status", index=True))
+    alter_db_add_column(migrator, "file", "asr_progress", FloatField(default=0, help_text="ASR task progress (0-100)"))
+    alter_db_add_column(migrator, "file", "asr_result", TextField(null=True, help_text="ASR recognition result", default=""))
+    alter_db_add_column(migrator, "file", "asr_task_id", CharField(max_length=40, null=False, default="", help_text="ASR task ID", index=True))
+    
+    alter_db_add_column(migrator, "document", "asr_status", CharField(max_length=32, null=False, default="", help_text="ASR task status", index=True))
+    alter_db_add_column(migrator, "document", "asr_progress", FloatField(default=0, help_text="ASR task progress (0-100)"))
+    alter_db_add_column(migrator, "document", "asr_result", TextField(null=True, help_text="ASR recognition result", default=""))
+    alter_db_add_column(migrator, "document", "asr_task_id", CharField(max_length=40, null=False, default="", help_text="ASR task ID", index=True))
+    
     logging.disable(logging.NOTSET)

@@ -21,6 +21,7 @@ import {
   util,
 } from '../components/metedata/hooks/use-manage-modal';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
+import { AsrStatusCell } from './asr-status-cell';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
@@ -219,6 +220,14 @@ export function useDatasetTableColumns({
             showLog={showLog}
           ></ParsingStatusCell>
         );
+      },
+    },
+    {
+      id: 'asrStatus',
+      header: '语音识别',
+      enableHiding: false,
+      cell: ({ row }) => {
+        return <AsrStatusCell record={row.original}></AsrStatusCell>;
       },
     },
     {

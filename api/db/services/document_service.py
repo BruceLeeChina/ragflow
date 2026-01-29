@@ -75,6 +75,10 @@ class DocumentService(CommonService):
             cls.model.create_date,
             cls.model.update_time,
             cls.model.update_date,
+            cls.model.asr_status,
+            cls.model.asr_progress,
+            cls.model.asr_result,
+            cls.model.asr_task_id,
         ]
 
     @classmethod
