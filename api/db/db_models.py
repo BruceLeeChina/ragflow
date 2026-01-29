@@ -899,6 +899,10 @@ class Conversation(DataBaseModel):
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
+    # TTS related fields
+    tts_task_id = CharField(max_length=40, null=False, default="", help_text="TTS task ID", index=True)
+    tts_status = CharField(max_length=32, null=False, default="pending", help_text="TTS task status", index=True)
+    tts_file_url = TextField(null=True, help_text="TTS audio file URL", default="")
 
     class Meta:
         db_table = "conversation"
@@ -1315,5 +1319,10 @@ def migrate_db():
     alter_db_add_column(migrator, "document", "asr_progress", FloatField(default=0, help_text="ASR task progress (0-100)"))
     alter_db_add_column(migrator, "document", "asr_result", TextField(null=True, help_text="ASR recognition result", default=""))
     alter_db_add_column(migrator, "document", "asr_task_id", CharField(max_length=40, null=False, default="", help_text="ASR task ID", index=True))
+    
+    # Add TTS related fields to conversation table
+    alter_db_add_column(migrator, "conversation", "tts_task_id", CharField(max_length=40, null=False, default="", help_text="TTS task ID", index=True))
+    alter_db_add_column(migrator, "conversation", "tts_status", CharField(max_length=32, null=False, default="pending", help_text="TTS task status", index=True))
+    alter_db_add_column(migrator, "conversation", "tts_file_url", TextField(null=True, help_text="TTS audio file URL", default=""))
     
     logging.disable(logging.NOTSET)

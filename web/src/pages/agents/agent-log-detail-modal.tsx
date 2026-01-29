@@ -16,6 +16,7 @@ interface CustomModalProps {
   onClose: () => void;
   message: IAgentLogMessage[];
   reference: IReferenceObject;
+  id?: string;
 }
 
 export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
@@ -23,6 +24,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
   onClose,
   message: derivedMessages,
   reference,
+  id,
 }) => {
   const { data: userInfo } = useFetchUserInfo();
   const { data: canvasInfo } = useFetchAgent();
@@ -74,6 +76,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
                 index={i}
                 showLikeButton={false}
                 showLog={false}
+                conversationId={id}
               ></MessageItem>
             );
           })}

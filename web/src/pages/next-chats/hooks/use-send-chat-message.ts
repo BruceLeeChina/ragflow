@@ -7,6 +7,7 @@ import {
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
+import { apiService } from '@/services/api-service';
 import api from '@/utils/api';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
@@ -184,8 +185,17 @@ export const useSendMessage = (controller: AbortController) => {
     //  #1289
     if (answer.answer && conversationId && isNew !== 'true') {
       addNewestAnswer(answer);
+      // Trigger TTS generation for the answer
+      apiService
+        .generateTts({
+          conversation_id: conversationId,
+          content: answer.answer,
+        })
+        .catch((error) => {
+          console.error('TTS generation failed:', error);
+        });
     }
-  }, [answer, addNewestAnswer, conversationId, isNew]);
+  }, [answer.answer, addNewestAnswer, conversationId, isNew]);
 
   return {
     handlePressEnter,

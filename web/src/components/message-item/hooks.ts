@@ -51,7 +51,11 @@ export const useRemoveMessage = (
   return { onRemoveMessage, loading };
 };
 
-export const useSpeech = (content: string, audioBinary?: string) => {
+export const useSpeech = (
+  content: string,
+  audioBinary?: string,
+  ttsFileUrl?: string,
+) => {
   const ref = useRef<HTMLAudioElement>(null);
   const { read } = useSpeechWithSse();
   const player = useRef<SpeechPlayer>();
@@ -79,11 +83,23 @@ export const useSpeech = (content: string, audioBinary?: string) => {
   }, []);
 
   const speech = useCallback(async () => {
-    const response = await read({ text: content });
-    if (response) {
-      player?.current?.feedWithResponse(response);
+    if (ttsFileUrl) {
+      // 如果有TTS文件URL，直接播放
+      if (ref.current) {
+        ref.current.src = ttsFileUrl;
+        ref.current.play().catch((error) => {
+          console.error('Error playing audio:', error);
+          setIsPlaying(false);
+        });
+      }
+    } else {
+      // 否则使用语音合成
+      const response = await read({ text: content });
+      if (response) {
+        player?.current?.feedWithResponse(response);
+      }
     }
-  }, [read, content]);
+  }, [read, content, ttsFileUrl]);
 
   const handleRead = useCallback(async () => {
     if (isPlaying) {

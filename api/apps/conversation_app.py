@@ -17,9 +17,12 @@ import json
 import os
 import re
 import logging
+import httpx
+import asyncio
+from datetime import timedelta
 from copy import deepcopy
 import tempfile
-from quart import Response, request
+from quart import Response, request, make_response
 from api.apps import current_user, login_required
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -31,7 +34,13 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import chunks_format
+from rag.utils.minio_conn import RAGFlowMinio
 from common.constants import RetCode, LLMType
+from common import settings
+
+TTS_API_URL = "http://127.0.0.1:8001/submit_tts_task"
+CALLBACK_URL = "http://127.0.0.1:9380/v1/conversation/tts/callback"
+minio_client = RAGFlowMinio()
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -476,3 +485,198 @@ Related search terms:
         gen_conf,
     )
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route("/tts/generate", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("conversation_id", "content")
+async def generate_tts():
+    req = await get_request_json()
+    conversation_id = req["conversation_id"]
+    content = req["content"]
+
+    try:
+        # 验证对话是否存在
+        e, conv = ConversationService.get_by_id(conversation_id)
+        if not e:
+            return get_data_error_result(message="Conversation not found!")
+
+        # 记录日志
+        logging.info(f"TTS generate request: conversation_id={conversation_id}, content={content}, type={type(content)}")
+
+        # 确保content是字符串
+        if not isinstance(content, str):
+            content = str(content)
+            logging.info(f"Converted content to string: {content}")
+
+        # 调用Chatterbox TTS API
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 构建表单数据
+            form_data = {
+                "text": content,
+                "language_id": "zh",  # 默认中文
+                "exaggeration": "0.5",
+                "temperature": "0.8",
+                "cfg_weight": "0.5",
+                "seed_num": "0",
+                "callback_url": CALLBACK_URL
+            }
+            logging.info(f"TTS API form data: {form_data}")
+            
+            # 使用multipart/form-data格式发送请求
+            tts_response = await client.post(
+                TTS_API_URL,
+                data=form_data
+            )
+
+            logging.info(f"TTS API response status: {tts_response.status_code}")
+            logging.info(f"TTS API response text: {tts_response.text}")
+            
+            if tts_response.status_code != 200:
+                logging.error(f"TTS API error: {tts_response.text}")
+                return get_data_error_result(message=f"TTS API error: {tts_response.text}")
+
+            tts_data = tts_response.json()
+            logging.info(f"TTS API response json: {tts_data}")
+            
+            if tts_data.get("code") != 0:
+                logging.error(f"TTS API error: {tts_data.get('msg')}")
+                return get_data_error_result(message=f"TTS API error: {tts_data.get('msg')}")
+
+            task_id = tts_data.get("task_id")
+            if not task_id:
+                return get_data_error_result(message="Invalid TTS API response: missing task_id")
+
+            # 更新对话的tts_task_id
+            conv_data = conv.to_dict()
+            conv_data["tts_task_id"] = task_id
+            conv_data["tts_status"] = "pending"
+            ConversationService.update_by_id(conversation_id, conv_data)
+
+            return get_json_result(data={"task_id": task_id})
+
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route("/tts/callback", methods=["POST"])  # noqa: F821
+async def tts_callback():
+    """处理TTS回调"""
+    try:
+        req = await get_request_json()
+        task_id = req.get("task_id")
+        status = req.get("status")
+        audio_url = req.get("result", {}).get("output_url")
+
+        if not task_id:
+            return get_data_error_result(message="Missing task_id")
+
+        # 根据task_id查找对话
+        convs = ConversationService.query(tts_task_id=task_id)
+        if not convs:
+            return get_data_error_result(message="Conversation not found for task_id")
+
+        conv = convs[0]
+        conv_data = conv.to_dict()
+        conv_data["tts_status"] = status
+
+        if status == "completed":
+            # 使用task_id下载TTS文件
+            try:
+                # 使用task_id从TTS服务下载文件
+                tts_download_url = f"http://127.0.0.1:8001/download_tts_audio?task_id={task_id}"
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    audio_response = await client.get(tts_download_url)
+                    if audio_response.status_code != 200:
+                        logging.error(f"Failed to download audio file: {audio_response.status_code}")
+                        return get_data_error_result(message="Failed to download audio file")
+                    audio_data = audio_response.content
+
+                # 生成唯一的文件名和位置
+                import uuid
+                filename = f"{task_id}_{uuid.uuid4().hex}.mp3"
+                location = f"tts/{filename}"
+
+                # 上传到MinIO，参考 /v1/file/upload 的实现
+                # 使用 conversation_id 作为 bucket
+                bucket = conv.id
+                await asyncio.to_thread(settings.STORAGE_IMPL.put, bucket, location, audio_data)
+
+                # 获取预签名URL
+                presigned_url = await asyncio.to_thread(
+                    minio_client.get_presigned_url, bucket, location, expires=timedelta(days=7)
+                )
+                conv_data["tts_file_url"] = presigned_url
+                logging.info(f"TTS file uploaded to MinIO: {bucket}/{location}, URL: {presigned_url}")
+            except Exception as e:
+                logging.exception(e)
+                # 出错时仍更新状态，但不设置文件URL
+                pass
+
+        ConversationService.update_by_id(conv.id, conv_data)
+
+        return get_json_result(data={"success": True})
+
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route("/tts/down", methods=["GET"])  # noqa: F821
+@login_required
+async def download_tts():
+    """下载合成的语音文件，参考 /v1/file/get 的实现"""
+    conversation_id = request.args.get("conversation_id")
+    if not conversation_id:
+        return get_data_error_result(message="Missing conversation_id")
+
+    try:
+        # 验证对话是否存在
+        e, conv = ConversationService.get_by_id(conversation_id)
+        if not e:
+            return get_data_error_result(message="Conversation not found!")
+
+        # 检查是否有tts_file_url
+        conv_data = conv.to_dict()
+        tts_file_url = conv_data.get("tts_file_url")
+        tts_status = conv_data.get("tts_status")
+
+        if not tts_file_url:
+            return get_data_error_result(message="No TTS audio file available")
+
+        if tts_status != "completed":
+            return get_data_error_result(message="TTS task is not completed")
+
+        # 从minio下载文件，参考 /v1/file/get 的实现
+        # 解析tts_file_url获取文件路径
+        import urllib.parse
+        import re
+        parsed_url = urllib.parse.urlparse(tts_file_url)
+        path = parsed_url.path
+        # 提取文件名（假设路径格式为/bucket/tts/filename.mp3）
+        filename = path.split("/")[-1]
+        location = f"tts/{filename}"
+
+        # 从minio获取文件，使用 conversation_id 作为 bucket
+        bucket = conversation_id
+        try:
+            # 下载文件内容，参考 /v1/file/get 的实现
+            blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, location)
+            if not blob:
+                return get_data_error_result(message="Failed to download audio file from MinIO")
+        except Exception as e:
+            logging.exception(e)
+            return get_data_error_result(message="Failed to download audio file from MinIO")
+
+        # 返回音频文件，参考 /v1/file/get 的实现
+        response = await make_response(blob)
+        ext = re.search(r"\.([^.]+)$", filename)
+        if ext:
+            response.headers.set('Content-Type', 'audio/%s' % ext.group(1))
+        response.headers.set('Content-Disposition', f'attachment; filename="{filename}"')
+        return response
+
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)

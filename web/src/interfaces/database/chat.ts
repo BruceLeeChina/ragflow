@@ -99,6 +99,8 @@ export interface Message {
   files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
+  tts_file_url?: string;
+  tts_status?: string;
 }
 
 export interface IReferenceChunk {

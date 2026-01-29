@@ -461,5 +461,6 @@ export const useSendAgentMessage = ({
     appendUploadResponseList,
     addNewestOneAnswer,
     sendMessage,
+    sessionId,
   };
 };

@@ -98,6 +98,7 @@ export function SingleChatBox({
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage}
                 sendLoading={sendLoading}
+                conversationId={conversationId}
               ></MessageItem>
             );
           })}

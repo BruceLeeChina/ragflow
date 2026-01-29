@@ -135,6 +135,8 @@ export default {
   deleteMessage: `${api_host}/conversation/delete_msg`,
   thumbup: `${api_host}/conversation/thumbup`,
   tts: `${api_host}/conversation/tts`,
+  ttsGenerate: `${api_host}/conversation/tts/generate`,
+  ttsCallback: `${api_host}/conversation/tts/callback`,
   ask: `${api_host}/conversation/ask`,
   mindmap: `${api_host}/conversation/mindmap`,
   getRelatedQuestions: `${api_host}/conversation/related_questions`,

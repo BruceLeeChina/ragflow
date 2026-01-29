@@ -36,6 +36,7 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
+    sessionId,
   } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -84,6 +85,7 @@ function AgentChatBox() {
                   avatar={userInfo.avatar}
                   avatarDialog={canvasInfo.avatar}
                   item={message}
+                  conversationId={sessionId}
                   reference={findReferenceByMessageId(message.id)}
                   clickDocumentButton={clickDocumentButton}
                   index={i}

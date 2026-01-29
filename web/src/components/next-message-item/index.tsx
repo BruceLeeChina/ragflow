@@ -242,6 +242,9 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        conversationId={conversationId}
+                        ttsFileUrl={item['tts_file_url']}
+                        ttsStatus={item['tts_status']}
                         attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}
@@ -254,6 +257,9 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        conversationId={conversationId}
+                        ttsFileUrl={item['tts_file_url']}
+                        ttsStatus={item['tts_status']}
                         attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}

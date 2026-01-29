@@ -57,6 +57,7 @@ type ChatCardProps = {
   derivedMessages: IMessage[];
   sendLoading: boolean;
   conversation: IClientConversation;
+  conversationId: string;
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -75,6 +76,7 @@ const ChatCard = forwardRef(function ChatCard(
     sendLoading,
     clickDocumentButton,
     conversation,
+    conversationId,
   }: ChatCardProps,
   ref,
 ) {
@@ -183,12 +185,12 @@ const ChatCard = forwardRef(function ChatCard(
                     },
                     message,
                   )}
-                  // clickDocumentButton={clickDocumentButton}
+                  clickDocumentButton={clickDocumentButton}
                   index={i}
                   removeMessageById={removeMessageById}
                   regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}
-                  clickDocumentButton={clickDocumentButton}
+                  conversationId={conversationId}
                 ></MessageItem>
               );
             })}
@@ -243,6 +245,7 @@ export function MultipleChatBox({
             sendLoading={sendLoading}
             clickDocumentButton={clickDocumentButton}
             conversation={conversation}
+            conversationId={conversationId}
           ></ChatCard>
         ))}
       </div>

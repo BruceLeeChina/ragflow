@@ -63,7 +63,7 @@ export default function Chat() {
   const { data: dialogList } = useFetchConversationList();
 
   const currentConversationName = useMemo(() => {
-    return dialogList.find((x) => x.id === conversationId)?.name;
+    return dialogList?.find((x) => x.id === conversationId)?.name;
   }, [conversationId, dialogList]);
 
   const fetchConversation: typeof handleConversationCardClick = useCallback(

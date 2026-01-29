@@ -103,6 +103,7 @@ const ChatContainer = () => {
                     clickDocumentButton={clickDocumentButton}
                     showLikeButton={false}
                     showLoudspeaker={false}
+                    conversationId={conversationId}
                   ></MessageItem>
                 );
               })}

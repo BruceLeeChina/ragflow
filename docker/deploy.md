@@ -240,6 +240,15 @@ ID: Qwen3-Embedding-0.6B
 Rerank模型：xinference
 ID: Qwen3-Reranker-0.6B
 
+6.TTS chatterbox 
+conda activate chatterbox
+python server.py --host 0.0.0.0 --port 8001 --device cuda
+
+7. ASR fuasr
+conda activate FunAS
+python server.py --host 0.0.0.0 --port 8002 --device cpu --ngpu 0
+
+
 ## ################################# 4.访问测试  ###################################
 访问登录：
 http://127.0.0.1/admin

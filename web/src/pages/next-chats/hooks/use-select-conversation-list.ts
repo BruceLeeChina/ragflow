@@ -54,7 +54,7 @@ export const useSelectDerivedConversationList = () => {
               },
             ],
           } as any,
-          ...conversationList,
+          ...(conversationList || []),
         ];
         return nextList;
       }
@@ -74,7 +74,7 @@ export const useSelectDerivedConversationList = () => {
   // When you first enter the page, select the top conversation card
 
   useEffect(() => {
-    setList([...conversationList]);
+    setList([...(conversationList || [])]);
   }, [conversationList]);
 
   return {

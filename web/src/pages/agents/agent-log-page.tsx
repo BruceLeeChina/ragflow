@@ -355,6 +355,7 @@ const AgentLogPage: React.FC = () => {
         isOpen={openModal}
         message={modalData?.message as IAgentLogMessage[]}
         reference={modalData?.reference as unknown as IReferenceObject}
+        id={modalData?.id}
         onClose={() => setOpenModal(false)}
       />
     </div>

@@ -4,6 +4,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
 import { downloadFile } from '@/services/file-manager-service';
+import { api_host } from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -18,6 +19,7 @@ import { Download, NotebookText } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
+import { useTts } from '../message-item/use-tts';
 import { PromptDialog } from '../prompt-dialog';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
@@ -30,6 +32,9 @@ interface IProps {
   audioBinary?: string;
   showLoudspeaker?: boolean;
   showLog?: boolean;
+  conversationId?: string;
+  ttsFileUrl?: string;
+  ttsStatus?: string;
   attachment?: {
     file_name: string;
     doc_id: string;
@@ -45,6 +50,9 @@ export const AssistantGroupButton = ({
   showLikeButton,
   showLoudspeaker = true,
   showLog = true,
+  conversationId,
+  ttsFileUrl,
+  ttsStatus,
   attachment,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
@@ -55,11 +63,33 @@ export const AssistantGroupButton = ({
     showModal: showPromptModal,
   } = useSetModalState();
   const { t } = useTranslation();
-  const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
+  const { handleRead, ref, isPlaying } = useSpeech(
+    content,
+    audioBinary,
+    ttsFileUrl,
+  );
+  const { generateTts, isGenerating } = useTts();
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
   }, [onFeedbackOk]);
+
+  const handleGenerateTts = useCallback(async () => {
+    if (conversationId) {
+      await generateTts({ conversationId, content });
+    }
+  }, [conversationId, content, generateTts]);
+
+  const handleDownloadTts = useCallback(() => {
+    if (conversationId) {
+      const link = document.createElement('a');
+      link.href = `${api_host}/v1/conversation/tts/down?conversation_id=${conversationId}`;
+      link.download = `tts-${conversationId}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [conversationId]);
 
   const { showLogSheet } = useContext(AgentChatContext);
 
@@ -78,12 +108,40 @@ export const AssistantGroupButton = ({
         <ToggleGroupItem value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </ToggleGroupItem>
+        {conversationId && (
+          <ToggleGroupItem
+            value="e"
+            onClick={handleGenerateTts}
+            disabled={isGenerating}
+          >
+            <Tooltip title="合成语音">
+              <SoundOutlined spin={isGenerating} />
+            </Tooltip>
+          </ToggleGroupItem>
+        )}
         {showLoudspeaker && (
-          <ToggleGroupItem value="b" onClick={handleRead}>
+          <ToggleGroupItem
+            value="b"
+            onClick={handleRead}
+            disabled={ttsStatus !== 'completed'}
+          >
             <Tooltip title={t('chat.read')}>
               {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
             </Tooltip>
-            <audio src="" ref={ref}></audio>
+            <audio src="" ref={ref}>
+              {' '}
+            </audio>
+          </ToggleGroupItem>
+        )}
+        {conversationId && (
+          <ToggleGroupItem
+            value="g"
+            onClick={handleDownloadTts}
+            disabled={!ttsFileUrl || ttsStatus !== 'completed'}
+          >
+            <Tooltip title="下载语音">
+              <Download size={16} />
+            </Tooltip>
           </ToggleGroupItem>
         )}
         {showLikeButton && (

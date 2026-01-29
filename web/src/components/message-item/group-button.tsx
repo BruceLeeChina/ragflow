@@ -2,9 +2,11 @@ import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { api_host } from '@/utils/api';
 import {
   DeleteOutlined,
   DislikeOutlined,
+  DownloadOutlined,
   LikeOutlined,
   PauseCircleOutlined,
   SoundOutlined,
@@ -16,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
+import { useTts } from './use-tts';
 
 interface IProps {
   messageId: string;
@@ -24,6 +27,9 @@ interface IProps {
   showLikeButton: boolean;
   audioBinary?: string;
   showLoudspeaker?: boolean;
+  conversationId?: string;
+  ttsFileUrl?: string;
+  ttsStatus?: string;
 }
 
 export const AssistantGroupButton = ({
@@ -33,6 +39,9 @@ export const AssistantGroupButton = ({
   audioBinary,
   showLikeButton,
   showLoudspeaker = true,
+  conversationId,
+  ttsFileUrl,
+  ttsStatus,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -42,11 +51,33 @@ export const AssistantGroupButton = ({
     showModal: showPromptModal,
   } = useSetModalState();
   const { t } = useTranslation();
-  const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
+  const { handleRead, ref, isPlaying } = useSpeech(
+    content,
+    audioBinary,
+    ttsFileUrl,
+  );
+  const { generateTts, isGenerating } = useTts();
 
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
   }, [onFeedbackOk]);
+
+  const handleGenerateTts = useCallback(async () => {
+    if (conversationId) {
+      await generateTts({ conversationId, content });
+    }
+  }, [conversationId, content, generateTts]);
+
+  const handleDownloadTts = useCallback(() => {
+    if (conversationId) {
+      const link = document.createElement('a');
+      link.href = `${api_host}/v1/conversation/tts/down?conversation_id=${conversationId}`;
+      link.download = `tts-${conversationId}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }, [conversationId]);
 
   return (
     <>
@@ -54,12 +85,40 @@ export const AssistantGroupButton = ({
         <Radio.Button value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
+        {conversationId && (
+          <Radio.Button
+            value="e"
+            onClick={handleGenerateTts}
+            disabled={isGenerating}
+          >
+            <Tooltip title="合成语音">
+              <SoundOutlined spin={isGenerating} />
+            </Tooltip>
+          </Radio.Button>
+        )}
         {showLoudspeaker && (
-          <Radio.Button value="b" onClick={handleRead}>
+          <Radio.Button
+            value="b"
+            onClick={handleRead}
+            disabled={ttsStatus !== 'completed'}
+          >
             <Tooltip title={t('chat.read')}>
               {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
             </Tooltip>
-            <audio src="" ref={ref}></audio>
+            <audio src="" ref={ref}>
+              {' '}
+            </audio>
+          </Radio.Button>
+        )}
+        {conversationId && (
+          <Radio.Button
+            value="f"
+            onClick={handleDownloadTts}
+            disabled={!ttsFileUrl || ttsStatus !== 'completed'}
+          >
+            <Tooltip title="下载语音">
+              <DownloadOutlined />
+            </Tooltip>
           </Radio.Button>
         )}
         {showLikeButton && (

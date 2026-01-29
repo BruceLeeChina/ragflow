@@ -38,6 +38,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  conversationId?: string;
 }
 
 const MessageItem = ({
@@ -54,6 +55,7 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  conversationId,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -134,6 +136,9 @@ const MessageItem = ({
                   showLikeButton={showLikeButton}
                   audioBinary={item.audio_binary}
                   showLoudspeaker={showLoudspeaker}
+                  conversationId={conversationId}
+                  ttsFileUrl={item.tts_file_url}
+                  ttsStatus={item.tts_status}
                 ></AssistantGroupButton>
               )
             ) : (

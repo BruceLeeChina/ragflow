@@ -6,6 +6,7 @@ import {
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IAnswer, IMessage, Message } from '@/interfaces/database/chat';
+import { apiService } from '@/services/api-service';
 import api from '@/utils/api';
 import { buildMessageUuid } from '@/utils/chat';
 import { trim } from 'lodash';
@@ -236,8 +237,17 @@ export function useSendMultipleChatMessage(
   useEffect(() => {
     if (answer.answer && conversationId) {
       addNewestAnswer(answer);
+      // Trigger TTS generation for the answer
+      apiService
+        .generateTts({
+          conversation_id: conversationId,
+          content: answer.answer,
+        })
+        .catch((error) => {
+          console.error('TTS generation failed:', error);
+        });
     }
-  }, [answer, addNewestAnswer, conversationId]);
+  }, [answer.answer, addNewestAnswer, conversationId]);
 
   useEffect(() => {
     adjustRecordByChatBoxIds();
